@@ -1,0 +1,11 @@
+packages:
+  - 'frontend'
+  - 'backend'
+  - 'storage-service'
+  - 'api-gateway'
+allowBuilds:
+  '@firebase/util': true
+  '@google/genai': true
+  esbuild: true
+  protobufjs: true
+  unrs-resolver: true

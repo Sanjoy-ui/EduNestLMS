@@ -1,78 +1,116 @@
-import React, { useEffect, useRef, useState } from 'react'
-import img from "../../assets/empty.jpg"
+import React, { useEffect, useRef, useState } from 'react';
 import { FaArrowLeftLong } from "react-icons/fa6";
 import { useNavigate, useParams } from 'react-router-dom';
 import { serverUrl } from '../../App';
-import { FiCamera } from "react-icons/fi";
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { useDispatch, useSelector } from 'react-redux';
 import { ClipLoader } from 'react-spinners';
+import { useDispatch, useSelector } from 'react-redux';
 import { setCourseData } from '../../redux/courseSlice';
+import img from "../../assets/empty.jpg";
+import { FiCamera, FiPlusCircle } from "react-icons/fi";
 
 function AddCourses() {
-  const navigate = useNavigate()
-  const { courseId } = useParams()
-  const [selectedCourse, setSelectedCourse] = useState(null)
-  const [title, setTitle] = useState("")
-  const [subTitle, setSubTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [category, setCategory] = useState("")
-  const [level, setLevel] = useState("")
-  const [price, setPrice] = useState("")
-  const [isPublished, setIsPublished] = useState(false)
-  const thumb = useRef()
-  const [frontendImage, setFrontendImage] = useState(null)
-  const [backendImage, setBackendImage] = useState(null)
-  let [loading, setLoading] = useState(false)
-  const dispatch = useDispatch()
-  const { courseData } = useSelector(state => state.course)
+  const navigate = useNavigate();
+  const { courseId } = useParams();
+  const { creatorCourseData, courseData } = useSelector(state => state.course);
+  const selectedCourse = creatorCourseData.find(course => course._id === courseId);
+  const dispatch = useDispatch();
 
-  const categories = ["App Development", "AI/ML", "AI Tools", "Data Science", "Data Analytics", "Ethical Hacking", "UI UX Designing", "Web Development", "Others"];
+  const [title, setTitle] = useState("");
+  const [subTitle, setSubTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [level, setLevel] = useState("");
+  const [price, setPrice] = useState("");
+  const [frontendImage, setFrontendImage] = useState(img);
+  const [backendImage, setBackendImage] = useState(null);
+  const [isPublished, setIsPublished] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const thumb = useRef(null);
+
+  const categories = [
+    "App Development",
+    "Web Development",
+    "Data Science",
+    "Artificial Intelligence",
+    "Cloud Computing",
+    "Cyber Security",
+    "DevOps",
+    "Game Development",
+    "UI/UX Design",
+    "Software Testing"
+  ];
 
   const getCourseById = async () => {
     try {
-      const result = await axios.get(serverUrl + `/api/course/getcourse/${courseId}`, { withCredentials: true })
-      setSelectedCourse(result.data)
+      const result = await axios.get(`${serverUrl}/api/v1/course/getcourse/${courseId}`, { withCredentials: true });
+      const course = result.data;
+      setTitle(course.title || "");
+      setSubTitle(course.subTitle || "");
+      setDescription(course.description || "");
+      setCategory(course.category || "");
+      setLevel(course.level || "");
+      setPrice(course.price || "");
+      setFrontendImage(course.thumbnail || img);
+      setIsPublished(course?.isPublished || false);
     } catch (error) {
-      console.log(error)
+      console.log(error);
     }
-  }
+  };
 
   useEffect(() => {
     if (selectedCourse) {
-      setTitle(selectedCourse.title || "")
-      setSubTitle(selectedCourse.subTitle || "")
-      setDescription(selectedCourse.description || "")
-      setCategory(selectedCourse.category || "")
-      setLevel(selectedCourse.level || "")
-      setPrice(selectedCourse.price || "")
-      setFrontendImage(selectedCourse.thumbnail || img)
-      setIsPublished(selectedCourse?.isPublished)
+      setTitle(selectedCourse.title || "");
+      setSubTitle(selectedCourse.subTitle || "");
+      setDescription(selectedCourse.description || "");
+      setCategory(selectedCourse.category || "");
+      setLevel(selectedCourse.level || "");
+      setPrice(selectedCourse.price || "");
+      setFrontendImage(selectedCourse.thumbnail || img);
+      setIsPublished(selectedCourse?.isPublished || false);
     }
-  }, [selectedCourse])
+  }, [selectedCourse]);
 
-  useEffect(() => { getCourseById() }, [])
+  useEffect(() => { getCourseById(); }, []);
 
   const handleThumbnail = (e) => {
-    const file = e.target.files[0]
-    setBackendImage(file)
-    setFrontendImage(URL.createObjectURL(file))
-  }
+    const file = e.target.files[0];
+    setBackendImage(file);
+    setFrontendImage(URL.createObjectURL(file));
+  };
 
   const editCourseHandler = async () => {
     setLoading(true);
-    const formData = new FormData();
-    formData.append("title", title);
-    formData.append("subTitle", subTitle);
-    formData.append("description", description);
-    formData.append("category", category);
-    formData.append("level", level);
-    formData.append("price", price);
-    formData.append("thumbnail", backendImage);
-    formData.append("isPublished", isPublished);
+    let thumbnailUrl = selectedCourse?.thumbnail;
+
     try {
-      const result = await axios.post(`${serverUrl}/api/course/editcourse/${courseId}`, formData, { withCredentials: true });
+      // Step 1: Upload thumbnail image to storage-service via API Gateway if selected
+      if (backendImage instanceof File) {
+        const imageFormData = new FormData();
+        imageFormData.append("file", backendImage);
+        imageFormData.append("folder", "thumbnails");
+
+        const uploadRes = await axios.post(`${serverUrl}/api/storage/upload/image`, imageFormData, { withCredentials: true });
+        if (uploadRes.data.success) {
+          thumbnailUrl = uploadRes.data.url;
+        }
+      }
+
+      // Step 2: Update course metadata with JSON payload via API Gateway
+      const payload = {
+        title,
+        subTitle,
+        description,
+        category,
+        level,
+        price,
+        isPublished,
+        thumbnail: thumbnailUrl
+      };
+
+      const result = await axios.post(`${serverUrl}/api/v1/course/editcourse/${courseId}`, payload, { withCredentials: true });
       const updatedCourse = result.data;
       if (updatedCourse.isPublished) {
         const updatedCourses = courseData.map(c => c._id === courseId ? updatedCourse : c);
@@ -91,18 +129,18 @@ function AddCourses() {
   };
 
   const removeCourse = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      await axios.delete(serverUrl + `/api/course/removecourse/${courseId}`, { withCredentials: true })
-      toast.success("Course Deleted")
+      await axios.delete(serverUrl + `/api/v1/course/removecourse/${courseId}`, { withCredentials: true });
+      toast.success("Course Deleted");
       dispatch(setCourseData(courseData.filter(c => c._id !== courseId)));
-      navigate("/courses")
+      navigate("/courses");
     } catch (error) {
-      toast.error(error.response?.data?.message || "Error deleting course")
+      toast.error(error.response?.data?.message || "Error deleting course");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -116,10 +154,32 @@ function AddCourses() {
             </button>
             <h2 className="text-xl font-bold text-gray-900">Edit Course</h2>
           </div>
-          <button className="px-6 py-2.5 bg-black text-white rounded-xl text-sm font-medium hover:bg-gray-800 transition-all cursor-pointer" onClick={() => navigate(`/createlecture/${selectedCourse?._id}`)}>Manage Lectures</button>
+          <button
+            className="px-6 py-2.5 bg-black text-white rounded-xl text-sm font-medium hover:bg-gray-800 transition-all cursor-pointer flex items-center gap-2"
+            onClick={() => navigate(`/createlecture/${selectedCourse?._id || courseId}`)}
+          >
+            <FiPlusCircle className="w-4 h-4" /> Add / Manage Lectures
+          </button>
         </div>
 
         <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+
+          {/* Curriculum Banner Card */}
+          <div className="mb-6 p-5 rounded-2xl bg-gray-50 border border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-gray-900 text-base">Course Curriculum & Lectures</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {selectedCourse?.lectures?.length || 0} lecture(s) created so far. Add or update videos anytime.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/createlecture/${selectedCourse?._id || courseId}`)}
+              className="px-5 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-semibold hover:bg-black transition-all cursor-pointer shadow-sm shrink-0 flex items-center gap-1.5"
+            >
+              + Add New Lecture
+            </button>
+          </div>
 
           {/* Publish / Delete */}
           <div className="flex flex-wrap gap-3 mb-6">
@@ -190,7 +250,7 @@ function AddCourses() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default AddCourses
+export default AddCourses;

@@ -1,15 +1,18 @@
 # =========================================================
-# Stage 1: Build static assets using Node.js
+# Stage 1: Build static assets using Node.js & pnpm
 # =========================================================
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package manifests for caching layer
-COPY package.json package-lock.json ./
+# Enable pnpm
+RUN npm install -g pnpm
 
-# Install all dependencies (including devDependencies required for Vite)
-RUN npm ci
+# Copy package manifest
+COPY package.json ./
+
+# Install dependencies via pnpm
+RUN pnpm install
 
 # Copy application source code
 COPY . .
@@ -24,7 +27,7 @@ ARG VITE_FIREBASE_MESSAGING_SENDER_ID
 ARG VITE_FIREBASE_APP_ID
 
 # Build static bundle
-RUN npm run build
+RUN pnpm run build
 
 # =========================================================
 # Stage 2: Production Nginx Runner

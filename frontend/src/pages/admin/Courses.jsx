@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { FaEdit } from "react-icons/fa";
+import { FaEdit, FaPlus } from "react-icons/fa";
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import axios from 'axios';
@@ -17,7 +17,7 @@ function Courses() {
   useEffect(() => {
     const getCreatorData = async () => {
       try {
-        const result = await axios.get(serverUrl + "/api/course/getcreatorcourses", { withCredentials: true })
+        const result = await axios.get(serverUrl + "/api/v1/course/getcreatorcourses", { withCredentials: true })
         await dispatch(setCreatorCourseData(result.data))
       } catch (error) {
         console.log(error)
@@ -49,6 +49,7 @@ function Courses() {
                 <th className="text-left py-3.5 px-5 font-medium text-gray-500 text-xs uppercase tracking-wider">Course</th>
                 <th className="text-left py-3.5 px-5 font-medium text-gray-500 text-xs uppercase tracking-wider">Price</th>
                 <th className="text-left py-3.5 px-5 font-medium text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                <th className="text-left py-3.5 px-5 font-medium text-gray-500 text-xs uppercase tracking-wider">Lectures</th>
                 <th className="text-left py-3.5 px-5 font-medium text-gray-500 text-xs uppercase tracking-wider">Action</th>
               </tr>
             </thead>
@@ -65,8 +66,16 @@ function Courses() {
                       {course?.isPublished ? "Published" : "Draft"}
                     </span>
                   </td>
+                  <td className="py-3.5 px-5 text-gray-700">
+                    <button
+                      onClick={() => navigate(`/createlecture/${course?._id}`)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium hover:bg-gray-800 transition-all cursor-pointer shadow-sm"
+                    >
+                      <FaPlus className="w-2.5 h-2.5" /> Add Lectures ({course?.lectures?.length || 0})
+                    </button>
+                  </td>
                   <td className="py-3.5 px-5">
-                    <button className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer" onClick={() => navigate(`/addcourses/${course?._id}`)}>
+                    <button className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer" title="Edit Course" onClick={() => navigate(`/addcourses/${course?._id}`)}>
                       <FaEdit className="text-gray-600 w-3.5 h-3.5" />
                     </button>
                   </td>
@@ -79,7 +88,7 @@ function Courses() {
         {/* Mobile Cards */}
         <div className="md:hidden space-y-3">
           {creatorCourseData?.map((course, index) => (
-            <div key={index} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+            <div key={index} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
               <div className="flex gap-4 items-center">
                 <img src={course?.thumbnail || img1} alt="" className="w-16 h-16 rounded-xl object-cover" />
                 <div className="flex-1 min-w-0">
@@ -89,7 +98,18 @@ function Courses() {
                     {course?.isPublished ? "Published" : "Draft"}
                   </span>
                 </div>
-                <button className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer shrink-0" onClick={() => navigate(`/addcourses/${course?._id}`)}>
+              </div>
+              <div className="flex gap-2 border-t border-gray-100 pt-3">
+                <button
+                  onClick={() => navigate(`/createlecture/${course?._id}`)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-gray-900 text-white rounded-xl text-xs font-medium hover:bg-gray-800 transition-all cursor-pointer"
+                >
+                  <FaPlus className="w-2.5 h-2.5" /> Add Lectures ({course?.lectures?.length || 0})
+                </button>
+                <button
+                  className="px-3 py-2 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
+                  onClick={() => navigate(`/addcourses/${course?._id}`)}
+                >
                   <FaEdit className="text-gray-600 w-3.5 h-3.5" />
                 </button>
               </div>

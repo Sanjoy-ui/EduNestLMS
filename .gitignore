@@ -54,3 +54,17 @@ override.tf.json
 *_override.tf.json
 .terraform.rc
 terraform.rc
+
+
+
+# Start all microservices concurrently in dev mode:
+pnpm dev
+
+# Build frontend:
+pnpm build
+
+# Add a package to frontend only:
+pnpm --filter frontend add <package-name>
+
+# Add a package to backend only:
+pnpm --filter backend add <package-name>

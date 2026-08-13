@@ -1,4 +1,3 @@
-import uploadOnCloudinary from "../configs/cloudinary.js"
 import Course from "../models/courseModel.js"
 import Lecture from "../models/lectureModel.js"
 import User from "../models/userModel.js"
@@ -58,16 +57,14 @@ export const getCreatorCourses = async (req,res) => {
 export const editCourse = async (req,res) => {
     try {
         const {courseId} = req.params;
-        const {title , subTitle , description , category , level , price , isPublished } = req.body;
-        let thumbnail
-         if(req.file){
-            thumbnail =await uploadOnCloudinary(req.file.path)
-                }
+        const {title , subTitle , description , category , level , price , isPublished, thumbnail } = req.body;
+        
         let course = await Course.findById(courseId)
         if(!course){
             return res.status(404).json({message:"Course not found"})
         }
-        const updateData = {title , subTitle , description , category , level , price , isPublished ,thumbnail}
+        const updateData = {title , subTitle , description , category , level , price , isPublished}
+        if (thumbnail) updateData.thumbnail = thumbnail;
 
         course = await Course.findByIdAndUpdate(courseId , updateData , {new:true})
         return res.status(201).json(course)
@@ -135,38 +132,76 @@ export const createLecture = async (req,res) => {
     
 }
 
-export const getCourseLecture = async (req,res) => {
+export const getCourseLecture = async (req, res) => {
     try {
-        const {courseId} = req.params
-        const course = await Course.findById(courseId)
-        if(!course){
-            return res.status(404).json({message:"Course not found"})
+        const { courseId } = req.params;
+        const userId = req.userId;
+
+        const course = await Course.findById(courseId).populate("lectures");
+        if (!course) {
+            return res.status(404).json({ message: "Course not found" });
         }
-        await course.populate("lectures")
-        await course.save()
-        return res.status(200).json(course)
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(401).json({ message: "User not authenticated" });
+        }
+
+        // Check if user is course creator or enrolled student
+        const isCreator = course.creator.toString() === userId.toString();
+        const isEnrolled = user.enrolledCourses?.some(c => c.toString() === courseId.toString());
+
+        if (!isCreator && !isEnrolled) {
+            // Filter lectures: strip videoUrl for paid non-preview lectures
+            const safeLectures = course.lectures.map(lecture => {
+                const lecObj = lecture.toObject();
+                if (!lecObj.isPreviewFree) {
+                    delete lecObj.videoUrl;
+                }
+                return lecObj;
+            });
+
+            return res.status(403).json({
+                message: "Access denied. You must enroll in this course to watch paid lectures.",
+                isEnrolled: false,
+                lectures: safeLectures,
+                title: course.title,
+                category: course.category,
+                level: course.level,
+                creator: course.creator
+            });
+        }
+
+        return res.status(200).json({
+            isEnrolled: true,
+            lectures: course.lectures,
+            title: course.title,
+            category: course.category,
+            level: course.level,
+            creator: course.creator
+        });
     } catch (error) {
-        return res.status(500).json({message:`Failed to get Lectures ${error}`})
+        return res.status(500).json({ message: `Failed to get Lectures ${error}` });
     }
 }
 
 export const editLecture = async (req,res) => {
     try {
         const {lectureId} = req.params
-        const {isPreviewFree , lectureTitle} = req.body
+        const {isPreviewFree , lectureTitle, videoUrl} = req.body
         const lecture = await Lecture.findById(lectureId)
           if(!lecture){
             return res.status(404).json({message:"Lecture not found"})
         }
-        let videoUrl
-        if(req.file){
-            videoUrl =await uploadOnCloudinary(req.file.path)
+        if(videoUrl){
             lecture.videoUrl = videoUrl
-                }
+        }
         if(lectureTitle){
             lecture.lectureTitle = lectureTitle
         }
-        lecture.isPreviewFree = isPreviewFree
+        if(isPreviewFree !== undefined){
+            lecture.isPreviewFree = isPreviewFree
+        }
         
          await lecture.save()
         return res.status(200).json(lecture)

@@ -23,7 +23,7 @@ function Login() {
   const handleLogin = async () => {
     setLoading(true)
     try {
-      const result = await axios.post(serverUrl + "/api/auth/login", { email, password }, { withCredentials: true })
+      const result = await axios.post(serverUrl + "/api/v1/auth/login", { email, password }, { withCredentials: true })
       dispatch(setUserData(result.data))
       navigate("/")
       setLoading(false)
@@ -39,16 +39,16 @@ function Login() {
     try {
       const response = await signInWithPopup(auth, provider)
       let user = response.user
-      let name = user.displayName
+      let name = user.displayName || "User"
       let email = user.email
-      let role = ""
-      const result = await axios.post(serverUrl + "/api/auth/googlesignup", { name, email, role }, { withCredentials: true })
+      let role = "student"
+      const result = await axios.post(serverUrl + "/api/v1/auth/googlesignup", { name, email, role }, { withCredentials: true })
       dispatch(setUserData(result.data))
       navigate("/")
       toast.success("Login Successfully")
     } catch (error) {
-      console.log(error)
-      toast.error(error.response?.data?.message || "Google login failed")
+      console.error("Google Login Error:", error)
+      toast.error(error.response?.data?.message || error.message || "Google login failed")
     }
   }
 
@@ -119,8 +119,28 @@ function Login() {
 
         {/* Brand Side */}
         <div className='hidden md:flex w-1/2 bg-gradient-to-br from-black via-gray-900 to-black items-center justify-center flex-col p-10'>
-          <img src={logo} className='w-24 rounded-2xl shadow-2xl mb-6' alt="" />
-          <h2 className='text-white text-2xl font-bold tracking-wide'>VIRTUAL COURSES</h2>
+          <div className='inline-flex items-center gap-3 bg-[#060a17] border border-white/15 rounded-2xl px-5 py-3 shadow-2xl mb-4'>
+            <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-cyan-500/20 via-indigo-500/20 to-purple-500/20 border border-cyan-500/30 rounded-xl">
+              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 20V4L14 16V4M14 16L20 4V20" stroke="url(#loginNexusGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <defs>
+                  <linearGradient id="loginNexusGrad" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#38bdf8" />
+                    <stop offset="0.5" stopColor="#818cf8" />
+                    <stop offset="1" stopColor="#c084fc" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <div className='flex flex-col leading-tight justify-center text-left'>
+              <span className='text-lg font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400'>
+                NEXUS LEARN
+              </span>
+              <span className='text-[9px] font-bold tracking-widest text-gray-400 uppercase'>
+                Growth Through Intelligent Learning
+              </span>
+            </div>
+          </div>
           <p className='text-gray-400 text-sm mt-2 text-center max-w-xs'>Learn from industry experts and advance your career with our premium courses</p>
         </div>
       </div>

@@ -1,15 +1,17 @@
 # =========================================================
-# Stage 1: Dependencies Installation
+# Stage 1: Dependencies Installation via pnpm
 # =========================================================
 FROM node:20-alpine AS dependencies
 
 WORKDIR /app
 
-# Copy package manifests to leverage layer caching
-COPY package.json package-lock.json ./
+RUN npm install -g pnpm
 
-# Install only production dependencies cleanly
-RUN npm ci --omit=dev && npm cache clean --force
+# Copy package manifest
+COPY package.json ./
+
+# Install production dependencies
+RUN pnpm install --prod
 
 # =========================================================
 # Stage 2: Production Runner

@@ -1,4 +1,3 @@
-import uploadOnCloudinary from "../configs/cloudinary.js";
 import User from "../models/userModel.js";
 
 export const getCurrentUser = async (req,res) => {
@@ -17,18 +16,16 @@ export const getCurrentUser = async (req,res) => {
 export const UpdateProfile = async (req,res) => {
     try {
         const userId = req.userId
-        const {name , description} = req.body
-        let photoUrl
-        if(req.file){
-           photoUrl =await uploadOnCloudinary(req.file.path)
+        const {name , description, photoUrl} = req.body
+        const updateData = { name, description }
+        if (photoUrl) {
+            updateData.photoUrl = photoUrl
         }
-        const user = await User.findByIdAndUpdate(userId,{name,description,photoUrl})
-
+        const user = await User.findByIdAndUpdate(userId, updateData, { new: true })
 
         if(!user){
             return res.status(404).json({message:"User not found"})
         }
-        await user.save()
         return res.status(200).json(user)
     } catch (error) {
          console.log(error);

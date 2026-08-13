@@ -42,7 +42,7 @@ function SearchWithAi() {
 
   const handleRecommendation = async (query) => {
     try {
-      const result = await axios.post(`${serverUrl}/api/ai/search`, { input: query }, { withCredentials: true });
+      const result = await axios.post(`${serverUrl}/api/v1/ai/search`, { input: query }, { withCredentials: true });
       setRecommendations(result.data);
       if (result.data.length > 0) {
         speak("These are the top courses I found for you")

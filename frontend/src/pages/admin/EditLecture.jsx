@@ -22,12 +22,29 @@ function EditLecture() {
 
   const editLecture = async () => {
     setLoading(true)
-    const formData = new FormData()
-    formData.append("lectureTitle", lectureTitle)
-    formData.append("videoUrl", videoUrl)
-    formData.append("isPreviewFree", isPreviewFree)
+    let uploadedVideoUrl = selectedLecture?.videoUrl
+
     try {
-      const result = await axios.post(serverUrl + `/api/course/editlecture/${lectureId}`, formData, { withCredentials: true })
+      // Step 1: Upload lecture video file to storage-service via API Gateway if selected
+      if (videoUrl instanceof File) {
+        const videoFormData = new FormData()
+        videoFormData.append("file", videoUrl)
+        videoFormData.append("folder", "lectures")
+
+        const uploadRes = await axios.post(`${serverUrl}/api/storage/upload/video`, videoFormData, { withCredentials: true })
+        if (uploadRes.data.success) {
+          uploadedVideoUrl = uploadRes.data.url
+        }
+      }
+
+      // Step 2: Update lecture details with JSON payload via API Gateway
+      const payload = {
+        lectureTitle,
+        isPreviewFree,
+        videoUrl: uploadedVideoUrl
+      }
+
+      const result = await axios.post(`${serverUrl}/api/v1/course/editlecture/${lectureId}`, payload, { withCredentials: true })
       dispatch(setLectureData([...lectureData, result.data]))
       toast.success("Lecture Updated")
       navigate("/courses")
@@ -41,7 +58,7 @@ function EditLecture() {
   const removeLecture = async () => {
     setLoading1(true)
     try {
-      await axios.delete(serverUrl + `/api/course/removelecture/${lectureId}`, { withCredentials: true })
+      await axios.delete(serverUrl + `/api/v1/course/removelecture/${lectureId}`, { withCredentials: true })
       toast.success("Lecture Removed")
       navigate(`/createlecture/${courseId}`)
     } catch (error) {

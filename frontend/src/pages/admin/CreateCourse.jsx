@@ -15,7 +15,7 @@ const CreateCourse = () => {
   const CreateCourseHandler = async () => {
     setLoading(true)
     try {
-      await axios.post(serverUrl + "/api/course/create", { title, category }, { withCredentials: true })
+      await axios.post(serverUrl + "/api/v1/course/create", { title, category }, { withCredentials: true })
       toast.success("Course Created")
       navigate("/courses")
       setTitle("")

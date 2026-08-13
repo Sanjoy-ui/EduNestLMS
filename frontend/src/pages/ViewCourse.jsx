@@ -28,7 +28,7 @@ function ViewCourse() {
 
   const handleReview = async () => {
     try {
-      await axios.post(serverUrl + "/api/review/givereview", { rating, comment, courseId }, { withCredentials: true })
+      await axios.post(serverUrl + "/api/v1/review/givereview", { rating, comment, courseId }, { withCredentials: true })
       toast.success("Review Added")
       setRating(0)
       setComment("")
@@ -72,7 +72,7 @@ function ViewCourse() {
     const getCreator = async () => {
       if (selectedCourseData?.creator) {
         try {
-          const result = await axios.post(`${serverUrl}/api/course/getcreator`, { userId: selectedCourseData.creator }, { withCredentials: true });
+          const result = await axios.post(`${serverUrl}/api/v1/course/getcreator`, { userId: selectedCourseData.creator }, { withCredentials: true });
           setCreatorData(result.data);
         } catch (error) {
           console.error("Error fetching creator:", error);
@@ -92,8 +92,12 @@ function ViewCourse() {
   }, [creatorData, courseData]);
 
   const handleEnroll = async (courseId, userId) => {
+    if (!userData) {
+      toast.error("Please log in to enroll in this course");
+      return navigate("/login");
+    }
     try {
-      const orderData = await axios.post(serverUrl + "/api/payment/create-order", { courseId, userId }, { withCredentials: true });
+      const orderData = await axios.post(serverUrl + "/api/v1/payment/create-order", { courseId, userId }, { withCredentials: true });
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: orderData.data.amount,
@@ -103,7 +107,7 @@ function ViewCourse() {
         order_id: orderData.data.id,
         handler: async function (response) {
           try {
-            const verifyRes = await axios.post(serverUrl + "/api/payment/verify-payment", { ...response, courseId, userId }, { withCredentials: true });
+            const verifyRes = await axios.post(serverUrl + "/api/v1/payment/verify-payment", { ...response, courseId, userId }, { withCredentials: true });
             setIsEnrolled(true)
             toast.success(verifyRes.data.message);
           } catch (verifyError) {

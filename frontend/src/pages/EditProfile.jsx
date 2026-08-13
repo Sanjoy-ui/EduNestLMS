@@ -20,20 +20,32 @@ function EditProfile() {
 
   const updateProfile = async () => {
     setLoading(true)
-    const formData = new FormData()
-    formData.append("name", name)
-    formData.append("description", description)
-    formData.append("photoUrl", photoUrl)
+    let uploadedPhotoUrl = userData?.photoUrl
 
     try {
-      const result = await axios.post(serverUrl + "/api/user/updateprofile", formData, { withCredentials: true })
+      // Step 1: Upload image file to storage-service via API Gateway if selected
+      if (photoUrl instanceof File) {
+        const imageFormData = new FormData()
+        imageFormData.append("file", photoUrl)
+        imageFormData.append("folder", "profiles")
+
+        const uploadRes = await axios.post(`${serverUrl}/api/storage/upload/image`, imageFormData, { withCredentials: true })
+        if (uploadRes.data.success) {
+          uploadedPhotoUrl = uploadRes.data.url
+        }
+      }
+
+      // Step 2: Update user profile with JSON payload via API Gateway
+      const payload = { name, description, photoUrl: uploadedPhotoUrl }
+      const result = await axios.post(`${serverUrl}/api/v1/user/updateprofile`, payload, { withCredentials: true })
+
       dispatch(setUserData(result.data))
       navigate("/")
       setLoading(false)
       toast.success("Profile Updated Successfully")
     } catch (error) {
       console.log(error)
-      toast.error("Profile Update Error")
+      toast.error(error.response?.data?.message || "Profile Update Error")
       setLoading(false)
     }
   }

@@ -1,16 +1,21 @@
-import { createSlice } from "@reduxjs/toolkit"
+import { createSlice } from "@reduxjs/toolkit";
 
-const userSlice=createSlice({
-    name:"user",
-    initialState:{
-        userData:null
-    },//setUserData("ankush")<={payload}
-    reducers:{
-        setUserData:(state,action)=>{
-        state.userData=action.payload
-        }
+const userSlice = createSlice({
+  name: "user",
+  initialState: {
+    userData: null,
+    loadingUser: true
+  },
+  reducers: {
+    setUserData: (state, action) => {
+      state.userData = action.payload;
+      state.loadingUser = false;
+    },
+    setLoadingUser: (state, action) => {
+      state.loadingUser = action.payload;
     }
-})
+  }
+});
 
-export const {setUserData}=userSlice.actions
-export default userSlice.reducer
+export const { setUserData, setLoadingUser } = userSlice.actions;
+export default userSlice.reducer;
