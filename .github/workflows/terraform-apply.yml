@@ -1,0 +1,51 @@
+name: 1-Click AWS Infrastructure Provision (Apply)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target Environment to Provision'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-apply:
+    name: Execute Terraform Apply (Provision AWS Infrastructure)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Authenticate to AWS via IAM User Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Initialize Terraform
+        shell: bash
+        run: |
+          cd iac/environments/${{ inputs.target_environment }}
+          terraform init
+
+      - name: Execute Terraform Apply (-auto-approve)
+        shell: bash
+        run: |
+          cd iac/environments/${{ inputs.target_environment }}
+          echo "Executing 1-Click AWS Infrastructure Provisioning for ${{ inputs.target_environment }}..."
+          terraform apply -auto-approve -var-file="${{ inputs.target_environment }}.tfvars"
+          echo "AWS Infrastructure provisioned successfully!"

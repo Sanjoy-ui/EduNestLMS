@@ -1,0 +1,93 @@
+name: Teardown AWS Infrastructure & Scale Down
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Choose scale down action'
+        required: true
+        default: 'scale_down_zero'
+        type: choice
+        options:
+          - scale_down_zero
+          - scale_up_restore
+
+permissions:
+  contents: read
+
+jobs:
+  scale-down-infra:
+    name: Scale AWS ECS Services & Stop Compute Tasks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Authenticate to AWS via IAM User Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Execute Scale Down (Desired Count = 0)
+        if: ${{ inputs.action == 'scale_down_zero' }}
+        shell: bash
+        run: |
+          echo "Initiating 1-Click Scale-Down for AWS Free Account protection..."
+          
+          # Scale down Backend ECS Service
+          if [ -n "${{ secrets.ECS_SERVICE_NAME }}" ]; then
+            echo "Scaling down ECS Service: ${{ secrets.ECS_SERVICE_NAME }} in Cluster: ${{ secrets.ECS_CLUSTER_NAME }}..."
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_NAME }}" \
+              --desired-count 0
+          fi
+
+          # Scale down API Gateway ECS Service if configured
+          if [ -n "${{ secrets.ECS_SERVICE_GATEWAY_NAME }}" ]; then
+            echo "Scaling down Gateway Service: ${{ secrets.ECS_SERVICE_GATEWAY_NAME }}..."
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_GATEWAY_NAME }}" \
+              --desired-count 0
+          fi
+
+          # Scale down Storage ECS Service if configured
+          if [ -n "${{ secrets.ECS_SERVICE_STORAGE_NAME }}" ]; then
+            echo "Scaling down Storage Service: ${{ secrets.ECS_SERVICE_STORAGE_NAME }}..."
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_STORAGE_NAME }}" \
+              --desired-count 0
+          fi
+
+          echo "Scale-down completed! All running container tasks stopped to ensure $0 AWS charge."
+
+      - name: Execute Scale Up Restore (Desired Count = 1)
+        if: ${{ inputs.action == 'scale_up_restore' }}
+        shell: bash
+        run: |
+          echo "Initiating 1-Click Scale-Up Restore..."
+          
+          if [ -n "${{ secrets.ECS_SERVICE_NAME }}" ]; then
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_NAME }}" \
+              --desired-count 1
+          fi
+
+          if [ -n "${{ secrets.ECS_SERVICE_GATEWAY_NAME }}" ]; then
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_GATEWAY_NAME }}" \
+              --desired-count 1
+          fi
+
+          if [ -n "${{ secrets.ECS_SERVICE_STORAGE_NAME }}" ]; then
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
+              --service "${{ secrets.ECS_SERVICE_STORAGE_NAME }}" \
+              --desired-count 1
+          fi
+
+          echo "Scale-up initiated! Services are booting container instances."

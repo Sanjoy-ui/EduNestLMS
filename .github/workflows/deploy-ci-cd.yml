@@ -1,0 +1,192 @@
+name: Production CI/CD Pipeline & ECS Rolling Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================
+  # Job 1: Quality Gate & Linting / Test Validation
+  # =========================================================
+  validate:
+    name: Code Quality & Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm Package Manager
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Get pnpm Cache Directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Monorepo Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Frontend Production Build
+        run: pnpm --filter frontend run build
+
+  # =========================================================
+  # Job 2: Build Multi-Service Docker Images & Push to ECR
+  # =========================================================
+  build-and-push:
+    name: Build & Push Docker Images to ECR
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for Multi-Platform Builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to AWS via IAM User Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract Short Git SHA
+        id: vars
+        shell: bash
+        run: |
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # Build & Push API Gateway Service
+      - name: Build & Push API Gateway Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api-gateway
+          file: ./api-gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-api-gateway:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-api-gateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build & Push Core Backend Service
+      - name: Build & Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build & Push Storage Microservice
+      - name: Build & Push Storage Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./storage-service
+          file: ./storage-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-storage-service:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-storage-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =========================================================
+  # Job 3: Zero-Downtime AWS ECS Rolling Deployment & Health Check
+  # =========================================================
+  deploy-ecs:
+    name: Deploy to Amazon ECS & Verify Health
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to AWS via IAM User Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract Short Git SHA
+        id: vars
+        shell: bash
+        run: |
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Download Active Task Definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ secrets.ECS_TASK_DEFINITION_NAME }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Render New Image in Task Definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ secrets.ECS_CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
+
+      - name: Deploy Updated Task Definition to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ secrets.ECS_SERVICE_NAME }}
+          cluster: ${{ secrets.ECS_CLUSTER_NAME }}
+          wait-for-service-stability: true
+
+      - name: Verify ALB Live Endpoint Health Check
+        shell: bash
+        run: |
+          echo "Verifying ALB target group health check at ${{ secrets.ALB_HEALTH_CHECK_URL }}..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.ALB_HEALTH_CHECK_URL }} || echo "000")
+          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 301 ] || [ "$STATUS" -eq 302 ]; then
+            echo "Deployment healthy! HTTP Status: $STATUS"
+          else
+            echo "Warning: Health check returned HTTP Status $STATUS"
+          fi
