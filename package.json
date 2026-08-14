@@ -2,7 +2,7 @@
   "name": "edunest-lms-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "EduNest LMS Monorepo Workspace",
+  "description": "EduNestLMS Monorepo Workspace ",
   "scripts": {
     "dev": "pnpm --parallel -r run dev",
     "build": "pnpm --filter frontend run build"
