@@ -47,6 +47,70 @@ jobs:
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -reconfigure
 
+      - name: Recover Stale Terraform State Lock (if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd iac/environments/${{ inputs.target_environment }}
+
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is required for lock inspection but is not installed."
+            exit 1
+          fi
+
+          LOCK_TABLE=$(awk -F'"' '/dynamodb_table/ {print $2; exit}' backend.tf)
+          STATE_KEY=$(awk -F'"' '/key[[:space:]]*=/{print $2; exit}' backend.tf)
+
+          if [ -z "$LOCK_TABLE" ] || [ -z "$STATE_KEY" ]; then
+            echo "No Terraform DynamoDB lock configuration found in backend.tf; skipping lock recovery."
+            exit 0
+          fi
+
+          echo "Inspecting lock table '$LOCK_TABLE' for state key '$STATE_KEY'..."
+          LOCK_SCAN_OUTPUT=$(aws dynamodb scan \
+            --table-name "$LOCK_TABLE" \
+            --filter-expression "contains(LockID, :state_key)" \
+            --expression-attribute-values "{\":state_key\":{\"S\":\"$STATE_KEY\"}}" \
+            --projection-expression "LockID,Info")
+
+          LOCK_ITEM_COUNT=$(echo "$LOCK_SCAN_OUTPUT" | jq -r '.Count // 0')
+          if [ "$LOCK_ITEM_COUNT" -eq 0 ]; then
+            echo "No existing Terraform state lock entry found."
+            exit 0
+          fi
+
+          LOCK_INFO=$(echo "$LOCK_SCAN_OUTPUT" | jq -r '.Items[0].Info.S // empty')
+          if [ -z "$LOCK_INFO" ]; then
+            echo "::error::Found lock table item but missing Info payload; refusing to unlock."
+            echo "$LOCK_SCAN_OUTPUT"
+            exit 1
+          fi
+
+          LOCK_ID=$(echo "$LOCK_INFO" | jq -r '.ID // empty')
+          LOCK_OPERATION=$(echo "$LOCK_INFO" | jq -r '.Operation // empty')
+          LOCK_CREATED=$(echo "$LOCK_INFO" | jq -r '.Created // empty')
+          LOCK_WHO=$(echo "$LOCK_INFO" | jq -r '.Who // empty')
+
+          if [ -z "$LOCK_ID" ]; then
+            echo "::error::Unable to parse Terraform lock ID from DynamoDB lock record."
+            echo "$LOCK_INFO"
+            exit 1
+          fi
+
+          if [ "$LOCK_OPERATION" = "OperationTypeInvalid" ]; then
+            echo "Detected stale invalid Terraform lock:"
+            echo "  ID: $LOCK_ID"
+            echo "  Operation: $LOCK_OPERATION"
+            echo "  Created: $LOCK_CREATED"
+            echo "  Who: $LOCK_WHO"
+            echo "Releasing stale lock with terraform force-unlock..."
+            terraform force-unlock -force "$LOCK_ID"
+          else
+            echo "Terraform lock exists but is not marked invalid (operation: ${LOCK_OPERATION:-unknown})."
+            echo "::error::Refusing automatic unlock to avoid interrupting a legitimate active run."
+            exit 1
+          fi
+
       - name: Import Existing ECS Capacity Provider into Terraform State (if needed)
         if: inputs.target_environment == 'dev'
         shell: bash
