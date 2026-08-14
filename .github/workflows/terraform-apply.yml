@@ -51,17 +51,30 @@ jobs:
         if: inputs.target_environment == 'dev'
         shell: bash
         run: |
+          set -euo pipefail
           cd iac/environments/${{ inputs.target_environment }}
-          CAPACITY_PROVIDER_NAME=$(terraform console -var-file="${{ inputs.target_environment }}.tfvars" <<'EOF'
+
+          echo "Resolving ECS capacity provider name from Terraform variables..."
+          CAPACITY_PROVIDER_NAME=$(timeout 30s terraform console -var-file="${{ inputs.target_environment }}.tfvars" <<'EOF'
           format("%s-capacity-provider", var.prefix)
           EOF
           )
           CAPACITY_PROVIDER_NAME=$(echo "$CAPACITY_PROVIDER_NAME" | tr -d '"[:space:]')
 
-          if aws ecs describe-capacity-providers --capacity-providers "$CAPACITY_PROVIDER_NAME" >/dev/null 2>&1; then
-            if ! terraform state show module.ecs_ec2.aws_ecs_capacity_provider.cas >/dev/null 2>&1; then
+          if [ -z "$CAPACITY_PROVIDER_NAME" ]; then
+            echo "::error::Failed to resolve ECS capacity provider name."
+            exit 1
+          fi
+
+          echo "Resolved capacity provider: $CAPACITY_PROVIDER_NAME"
+          echo "Checking whether capacity provider exists in AWS..."
+
+          AWS_DESCRIBE_LOG=$(mktemp)
+          if timeout 30s aws ecs describe-capacity-providers --capacity-providers "$CAPACITY_PROVIDER_NAME" >"$AWS_DESCRIBE_LOG" 2>&1; then
+            echo "Capacity provider exists in AWS."
+            if ! timeout 20s terraform state show module.ecs_ec2.aws_ecs_capacity_provider.cas >/dev/null 2>&1; then
               echo "Importing existing ECS capacity provider: $CAPACITY_PROVIDER_NAME"
-              terraform import \
+              timeout 180s terraform import \
                 -var-file="${{ inputs.target_environment }}.tfvars" \
                 module.ecs_ec2.aws_ecs_capacity_provider.cas \
                 "$CAPACITY_PROVIDER_NAME"
@@ -69,7 +82,20 @@ jobs:
               echo "ECS capacity provider already tracked in Terraform state."
             fi
           else
-            echo "No pre-existing ECS capacity provider found; Terraform will create it."
+            AWS_EXIT_CODE=$?
+            if [ "$AWS_EXIT_CODE" -eq 124 ]; then
+              echo "::error::Timed out while checking ECS capacity provider existence in AWS."
+              cat "$AWS_DESCRIBE_LOG"
+              exit 1
+            fi
+
+            if grep -qiE "not found|does not exist|capacity provider.*not.*found|invalidparameterexception" "$AWS_DESCRIBE_LOG"; then
+              echo "No pre-existing ECS capacity provider found; Terraform will create it."
+            else
+              echo "::error::Failed to check ECS capacity provider due to unexpected AWS CLI error."
+              cat "$AWS_DESCRIBE_LOG"
+              exit 1
+            fi
           fi
 
       - name: Execute Terraform Apply (-auto-approve)
