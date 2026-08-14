@@ -29,7 +29,7 @@ resource "aws_security_group" "ecs_ec2_sg" {
   # Backend (5000) and storage-service (5001) are internal only - api-gateway
   # reaches them via localhost (host network mode), not through the ALB.
   ingress {
-    description     = "ALB -> API Gateway container (port 8080 only)"
+    description     = "ALB to API Gateway container (port 8080 only)"
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
