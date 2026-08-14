@@ -100,6 +100,25 @@ jobs:
             echo "VAL=edunest-dev-" >> $GITHUB_OUTPUT
           fi
 
+      - name: Ensure Required ECR Repositories Exist
+        shell: bash
+        run: |
+          REGION="${{ secrets.AWS_REGION }}"
+          PREFIX="${{ steps.prefix.outputs.VAL }}"
+          REPOSITORIES=("${PREFIX}api-gateway" "${PREFIX}backend" "${PREFIX}storage-service")
+
+          for REPO in "${REPOSITORIES[@]}"; do
+            if aws ecr describe-repositories --region "$REGION" --repository-names "$REPO" >/dev/null 2>&1; then
+              echo "ECR repository '$REPO' already exists."
+            else
+              echo "Creating missing ECR repository '$REPO'..."
+              aws ecr create-repository \
+                --region "$REGION" \
+                --repository-name "$REPO" \
+                --image-scanning-configuration scanOnPush=true >/dev/null
+            fi
+          done
+
       # Build & Push API Gateway Service
       - name: Build & Push API Gateway Image
         uses: docker/build-push-action@v5
