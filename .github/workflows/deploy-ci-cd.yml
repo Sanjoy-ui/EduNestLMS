@@ -89,6 +89,17 @@ jobs:
         run: |
           echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Resolve ECR Repository Name Prefix
+        id: prefix
+        shell: bash
+        run: |
+          RAW_PREFIX="${{ secrets.ECR_REPOSITORY_PREFIX }}"
+          if [ -n "$RAW_PREFIX" ]; then
+            echo "VAL=${RAW_PREFIX}-" >> $GITHUB_OUTPUT
+          else
+            echo "VAL=edunest-dev-" >> $GITHUB_OUTPUT
+          fi
+
       # Build & Push API Gateway Service
       - name: Build & Push API Gateway Image
         uses: docker/build-push-action@v5
@@ -97,8 +108,8 @@ jobs:
           file: ./api-gateway/Dockerfile
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-api-gateway:sha-${{ steps.vars.outputs.SHORT_SHA }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-api-gateway:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}api-gateway:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}api-gateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -110,8 +121,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -123,8 +134,8 @@ jobs:
           file: ./storage-service/Dockerfile
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-storage-service:sha-${{ steps.vars.outputs.SHORT_SHA }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-storage-service:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}storage-service:sha-${{ steps.vars.outputs.SHORT_SHA }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}storage-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -158,6 +169,17 @@ jobs:
         run: |
           echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Resolve ECR Repository Name Prefix
+        id: prefix
+        shell: bash
+        run: |
+          RAW_PREFIX="${{ secrets.ECR_REPOSITORY_PREFIX }}"
+          if [ -n "$RAW_PREFIX" ]; then
+            echo "VAL=${RAW_PREFIX}-" >> $GITHUB_OUTPUT
+          else
+            echo "VAL=edunest-dev-" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download Active Task Definition
         run: |
           aws ecs describe-task-definition \
@@ -170,7 +192,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ secrets.ECS_CONTAINER_NAME }}
-          image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_PREFIX }}-backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
 
       - name: Deploy Updated Task Definition to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
