@@ -2,6 +2,7 @@ resource "aws_ecr_repository" "services" {
   for_each             = toset(var.repository_names)
   name                 = "${var.prefix}-${each.value}"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true # Required for terraform destroy to wipe repos containing images
 
   image_scanning_configuration {
     scan_on_push = true

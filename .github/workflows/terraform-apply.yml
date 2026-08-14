@@ -36,16 +36,36 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Initialize Terraform
+      # Initialize Terraform with remote S3 backend so state persists
+      # between runs. The TF_STATE_BUCKET secret is the bucket name
+      # created by the terraform-bootstrap.yml workflow.
+      - name: Initialize Terraform with Remote S3 Backend
         shell: bash
         run: |
           cd iac/environments/${{ inputs.target_environment }}
-          terraform init
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -reconfigure
 
       - name: Execute Terraform Apply (-auto-approve)
         shell: bash
         run: |
           cd iac/environments/${{ inputs.target_environment }}
           echo "Executing 1-Click AWS Infrastructure Provisioning for ${{ inputs.target_environment }}..."
-          terraform apply -auto-approve -var-file="${{ inputs.target_environment }}.tfvars"
-          echo "AWS Infrastructure provisioned successfully!"
+          terraform apply \
+            -auto-approve \
+            -var-file="${{ inputs.target_environment }}.tfvars"
+
+      - name: Print Infrastructure Outputs
+        shell: bash
+        run: |
+          cd iac/environments/${{ inputs.target_environment }}
+          echo ""
+          echo "=========================================="
+          echo "  Infrastructure Provisioned Successfully!"
+          echo "=========================================="
+          terraform output
+          echo ""
+          echo "State saved to S3 bucket: ${{ secrets.TF_STATE_BUCKET }}"
+          echo "Run '1-Click Destroy' workflow to tear everything down."
+

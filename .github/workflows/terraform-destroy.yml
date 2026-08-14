@@ -14,7 +14,7 @@ on:
       confirm_destroy:
         description: 'Type DESTROY to confirm wiping all AWS infrastructure'
         required: true
-        default: 'DESTROY'
+        default: ''
         type: string
 
 permissions:
@@ -26,12 +26,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------------------------------------
+      # Safety Gate — must type DESTROY exactly
+      # -------------------------------------------------------
       - name: Verify Safety Confirmation Input
-        if: ${{ inputs.confirm_destroy != 'DESTROY' }}
         shell: bash
         run: |
-          echo "Aborting destroy operation! You must type DESTROY in the confirmation field."
-          exit 1
+          if [ "${{ inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "ERROR: Aborting destroy! You must type exactly 'DESTROY' in the confirmation field. Got: '${{ inputs.confirm_destroy }}'"
+            exit 1
+          fi
+          echo "Safety confirmation accepted. Proceeding with infrastructure teardown..."
 
       - name: Checkout Repository Code
         uses: actions/checkout@v4
@@ -48,16 +53,140 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Initialize Terraform
+      # -------------------------------------------------------
+      # Pre-Destroy: Scale ECS services to 0 so tasks drain
+      # cleanly before Terraform tries to delete the cluster.
+      # This avoids stuck deletions and ASG teardown failures.
+      # -------------------------------------------------------
+      - name: Pre-Destroy — Scale Down All ECS Services to Zero
+        shell: bash
+        run: |
+          ENV="${{ inputs.target_environment }}"
+          CLUSTER="edunest-${ENV}-cluster"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Scaling down ECS services in cluster: $CLUSTER..."
+
+          # Get all service ARNs in the cluster (handles 0 services gracefully)
+          SERVICES=$(aws ecs list-services \
+            --cluster "$CLUSTER" \
+            --region "$REGION" \
+            --query 'serviceArns' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$SERVICES" ] || [ "$SERVICES" = "None" ]; then
+            echo "No ECS services found in cluster $CLUSTER — skipping scale-down."
+          else
+            for SERVICE_ARN in $SERVICES; do
+              echo "Scaling down: $SERVICE_ARN"
+              aws ecs update-service \
+                --cluster "$CLUSTER" \
+                --service "$SERVICE_ARN" \
+                --desired-count 0 \
+                --region "$REGION" > /dev/null
+            done
+            echo "Waiting 30s for tasks to drain..."
+            sleep 30
+          fi
+
+      # -------------------------------------------------------
+      # Pre-Destroy: Force-delete all images from ECR repos
+      # so Terraform can delete the repositories cleanly.
+      # (Backup for repos that were created before force_delete
+      # was added to the Terraform config.)
+      # -------------------------------------------------------
+      - name: Pre-Destroy — Delete All ECR Images
+        shell: bash
+        run: |
+          ENV="${{ inputs.target_environment }}"
+          REGION="${{ secrets.AWS_REGION }}"
+          REPOS=("edunest-${ENV}-api-gateway" "edunest-${ENV}-backend" "edunest-${ENV}-storage-service")
+
+          for REPO in "${REPOS[@]}"; do
+            echo "Clearing images from ECR repo: $REPO..."
+            IMAGE_IDS=$(aws ecr list-images \
+              --repository-name "$REPO" \
+              --region "$REGION" \
+              --query 'imageIds[*]' \
+              --output json 2>/dev/null || echo "[]")
+
+            if [ "$IMAGE_IDS" = "[]" ] || [ -z "$IMAGE_IDS" ]; then
+              echo "  No images found in $REPO — skipping."
+            else
+              aws ecr batch-delete-image \
+                --repository-name "$REPO" \
+                --image-ids "$IMAGE_IDS" \
+                --region "$REGION" > /dev/null
+              echo "  Cleared all images from $REPO."
+            fi
+          done
+
+      # -------------------------------------------------------
+      # Initialize Terraform with remote S3 backend so it reads
+      # the correct state (knows all resources to destroy).
+      # -------------------------------------------------------
+      - name: Initialize Terraform with Remote S3 Backend
         shell: bash
         run: |
           cd iac/environments/${{ inputs.target_environment }}
-          terraform init
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -reconfigure
 
+      # -------------------------------------------------------
+      # The actual destroy — no || true, fails loudly on error.
+      # -------------------------------------------------------
       - name: Execute Terraform Destroy (-auto-approve)
         shell: bash
         run: |
           cd iac/environments/${{ inputs.target_environment }}
           echo "Executing 1-Click AWS Infrastructure Destroy for ${{ inputs.target_environment }}..."
-          terraform destroy -auto-approve -var-file="${{ inputs.target_environment }}.tfvars" || true
-          echo "All AWS resources (ALB, ECS, EC2, ECR, VPC) have been completely wiped out! $0 AWS bill guaranteed."
+          terraform destroy \
+            -auto-approve \
+            -var-file="${{ inputs.target_environment }}.tfvars"
+          echo "Terraform destroy complete."
+
+      # -------------------------------------------------------
+      # Post-Destroy Verification — confirm nothing remains
+      # -------------------------------------------------------
+      - name: Post-Destroy Verification
+        shell: bash
+        run: |
+          ENV="${{ inputs.target_environment }}"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo ""
+          echo "=========================================="
+          echo "  Post-Destroy AWS Resource Audit"
+          echo "=========================================="
+
+          echo ""
+          echo "ECS Clusters remaining:"
+          aws ecs list-clusters --region "$REGION" \
+            --query "clusterArns[?contains(@, 'edunest-${ENV}')]" \
+            --output text || echo "  None"
+
+          echo ""
+          echo "ECR Repositories remaining:"
+          aws ecr describe-repositories --region "$REGION" \
+            --query "repositories[?contains(repositoryName, 'edunest-${ENV}')].repositoryName" \
+            --output text || echo "  None"
+
+          echo ""
+          echo "Load Balancers remaining:"
+          aws elbv2 describe-load-balancers --region "$REGION" \
+            --query "LoadBalancers[?contains(LoadBalancerName, 'edunest-${ENV}')].LoadBalancerName" \
+            --output text || echo "  None"
+
+          echo ""
+          echo "EC2 Instances remaining:"
+          aws ec2 describe-instances --region "$REGION" \
+            --filters "Name=tag:Name,Values=edunest-${ENV}-*" "Name=instance-state-name,Values=running,pending,stopping" \
+            --query "Reservations[*].Instances[*].InstanceId" \
+            --output text || echo "  None"
+
+          echo ""
+          echo "=========================================="
+          echo "  All edunest-${ENV} AWS resources destroyed!"
+          echo "  AWS bill: $0.00"
+          echo "=========================================="

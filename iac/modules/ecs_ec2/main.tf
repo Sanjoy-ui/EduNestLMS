@@ -16,29 +16,29 @@ resource "aws_ecs_cluster" "main" {
 }
 
 # Security Group for EC2 Host Instance
+# Security Model:
+#   - INBOUND:  Only port 8080 from ALB SG (api-gateway). No SSH, no public internet access.
+#   - OUTBOUND: All traffic allowed (for ECR image pulls via NAT Gateway, MongoDB Atlas, Cloudinary).
+#   - No public IP + private subnet = zero direct internet reachability.
 resource "aws_security_group" "ecs_ec2_sg" {
   name        = "${var.prefix}-ecs-ec2-sg"
-  description = "Security group for ECS EC2 host instances"
+  description = "Security group for ECS EC2 host instances — private subnet, ALB-only inbound"
   vpc_id      = var.vpc_id
 
+  # Only the ALB is allowed to send traffic to the api-gateway container.
+  # Backend (5000) and storage-service (5001) are internal only — api-gateway
+  # reaches them via localhost (host network mode), not through the ALB.
   ingress {
-    description     = "Allow HTTP traffic from ALB to API Gateway container"
+    description     = "ALB → API Gateway container (port 8080 only)"
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
     security_groups = [var.alb_security_group_id]
   }
 
-  ingress {
-    description     = "Allow backend service communication from ALB"
-    from_port       = 5000
-    to_port         = 5001
-    protocol        = "tcp"
-    security_groups = [var.alb_security_group_id]
-  }
-
+  # Outbound: Allow all (NAT Gateway handles routing — no direct internet ingress possible)
   egress {
-    description = "Allow all outbound traffic"
+    description = "Allow all outbound traffic via NAT Gateway (ECR pulls, DB, APIs)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -53,18 +53,21 @@ resource "aws_security_group" "ecs_ec2_sg" {
   )
 }
 
-# EC2 Launch Template (t3.micro Free Tier)
+# EC2 Launch Template (t3.micro)
+# Security: No public IP assigned — instance lives in private subnet and is
+# only reachable from the ALB via the security group. Use AWS SSM Session Manager
+# for shell access (no SSH key pairs or port 22 needed).
 resource "aws_launch_template" "ecs_ec2" {
   name_prefix   = "${var.prefix}-ecs-ec2-"
-  image_id      = var.ami_id # Amazon Linux 2 ECS-Optimized AMI
-  instance_type = var.instance_type # t3.micro (Free Tier)
+  image_id      = var.ami_id # Amazon ECS-Optimized Amazon Linux 2 AMI
+  instance_type = var.instance_type # t3.micro
 
   iam_instance_profile {
     name = var.ecs_instance_profile_name
   }
 
   network_interfaces {
-    associate_public_ip_address = true
+    associate_public_ip_address = false # No public IP — private subnet only
     security_groups             = [aws_security_group.ecs_ec2_sg.id]
   }
 
@@ -85,10 +88,11 @@ resource "aws_launch_template" "ecs_ec2" {
   }
 }
 
-# Auto Scaling Group for t3.micro EC2 Instance
+# Auto Scaling Group — placed in private subnets (no public IP, no direct internet access)
+# Outbound traffic (ECR pulls, MongoDB, APIs) routes via the NAT Gateway.
 resource "aws_autoscaling_group" "ecs_asg" {
   name_prefix         = "${var.prefix}-ecs-asg-"
-  vpc_zone_identifier = var.public_subnet_ids
+  vpc_zone_identifier = var.private_subnet_ids # Private subnets — no internet exposure
   min_size            = 0
   max_size            = 1
   desired_capacity    = 1

@@ -1,13 +1,13 @@
 # ==============================================================================
-# Remote S3 Backend Configuration for Dev Environment
-# Uncomment and configure with your actual AWS S3 bucket and DynamoDB table
+# Remote S3 Backend — State is stored in S3 so apply + destroy share the same
+# resource list. Bucket name is passed via -backend-config in CI/CD workflows.
 # ==============================================================================
-# terraform {
-#   backend "s3" {
-#     bucket         = "edunest-lms-terraform-state-dev"
-#     key            = "dev/vpc/terraform.tfstate"
-#     region         = "us-east-1"
-#     dynamodb_table = "edunest-lms-terraform-locks-dev"
-#     encrypt        = true
-#   }
-# }
+terraform {
+  backend "s3" {
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "edunest-lms-terraform-locks"
+    encrypt        = true
+    # bucket is injected via: terraform init -backend-config="bucket=$TF_STATE_BUCKET"
+  }
+}

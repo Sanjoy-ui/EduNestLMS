@@ -56,7 +56,9 @@ module "ecs_ec2" {
   source                    = "../../modules/ecs_ec2"
   prefix                    = var.prefix
   vpc_id                    = module.vpc.vpc_id
-  public_subnet_ids         = module.vpc.public_subnet_ids
+  # Private subnets: EC2 host has no public IP, only reachable from ALB via SG.
+  # Outbound traffic (ECR image pulls, MongoDB Atlas) routes via NAT Gateway.
+  private_subnet_ids        = module.vpc.private_app_subnet_ids
   alb_security_group_id     = module.alb.alb_security_group_id
   instance_type             = var.instance_type # t3.micro Free Tier
   ami_id                    = var.ami_id

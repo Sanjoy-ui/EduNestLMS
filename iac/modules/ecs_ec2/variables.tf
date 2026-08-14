@@ -8,9 +8,9 @@ variable "vpc_id" {
   description = "VPC ID"
 }
 
-variable "public_subnet_ids" {
+variable "private_subnet_ids" {
   type        = list(string)
-  description = "Public subnet IDs for EC2 host placement"
+  description = "Private subnet IDs for EC2 host placement (no public IP, NAT Gateway for outbound)"
 }
 
 variable "alb_security_group_id" {
