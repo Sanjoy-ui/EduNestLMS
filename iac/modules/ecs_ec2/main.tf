@@ -22,21 +22,21 @@ resource "aws_ecs_cluster" "main" {
 #   - No public IP + private subnet = zero direct internet reachability.
 resource "aws_security_group" "ecs_ec2_sg" {
   name        = "${var.prefix}-ecs-ec2-sg"
-  description = "Security group for ECS EC2 host instances — private subnet, ALB-only inbound"
+  description = "Security group for ECS EC2 host instances - private subnet, ALB-only inbound"
   vpc_id      = var.vpc_id
 
   # Only the ALB is allowed to send traffic to the api-gateway container.
-  # Backend (5000) and storage-service (5001) are internal only — api-gateway
+  # Backend (5000) and storage-service (5001) are internal only - api-gateway
   # reaches them via localhost (host network mode), not through the ALB.
   ingress {
-    description     = "ALB → API Gateway container (port 8080 only)"
+    description     = "ALB -> API Gateway container (port 8080 only)"
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"
     security_groups = [var.alb_security_group_id]
   }
 
-  # Outbound: Allow all (NAT Gateway handles routing — no direct internet ingress possible)
+  # Outbound: Allow all (NAT Gateway handles routing - no direct internet ingress possible)
   egress {
     description = "Allow all outbound traffic via NAT Gateway (ECR pulls, DB, APIs)"
     from_port   = 0
@@ -54,7 +54,7 @@ resource "aws_security_group" "ecs_ec2_sg" {
 }
 
 # EC2 Launch Template (t3.micro)
-# Security: No public IP assigned — instance lives in private subnet and is
+# Security: No public IP assigned - instance lives in private subnet and is
 # only reachable from the ALB via the security group. Use AWS SSM Session Manager
 # for shell access (no SSH key pairs or port 22 needed).
 resource "aws_launch_template" "ecs_ec2" {
@@ -67,7 +67,7 @@ resource "aws_launch_template" "ecs_ec2" {
   }
 
   network_interfaces {
-    associate_public_ip_address = false # No public IP — private subnet only
+    associate_public_ip_address = false # No public IP - private subnet only
     security_groups             = [aws_security_group.ecs_ec2_sg.id]
   }
 
@@ -88,11 +88,11 @@ resource "aws_launch_template" "ecs_ec2" {
   }
 }
 
-# Auto Scaling Group — placed in private subnets (no public IP, no direct internet access)
+# Auto Scaling Group - placed in private subnets (no public IP, no direct internet access)
 # Outbound traffic (ECR pulls, MongoDB, APIs) routes via the NAT Gateway.
 resource "aws_autoscaling_group" "ecs_asg" {
   name_prefix         = "${var.prefix}-ecs-asg-"
-  vpc_zone_identifier = var.private_subnet_ids # Private subnets — no internet exposure
+  vpc_zone_identifier = var.private_subnet_ids # Private subnets - no internet exposure
   min_size            = 0
   max_size            = 1
   desired_capacity    = 1

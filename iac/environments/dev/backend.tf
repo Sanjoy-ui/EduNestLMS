@@ -1,5 +1,5 @@
 # ==============================================================================
-# Remote S3 Backend — State is stored in S3 so apply + destroy share the same
+# Remote S3 Backend - State is stored in S3 so apply + destroy share the same
 # resource list. Bucket name is passed via -backend-config in CI/CD workflows.
 # ==============================================================================
 terraform {

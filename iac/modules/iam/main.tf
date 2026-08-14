@@ -68,7 +68,7 @@ resource "aws_iam_role_policy_attachment" "ecs_instance_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
-# SSM Session Manager — secure shell access without SSH or port 22.
+# SSM Session Manager - secure shell access without SSH or port 22.
 # Allows `aws ssm start-session --target <instance-id>` for debugging.
 # All sessions are logged. No key pairs or bastion hosts needed.
 resource "aws_iam_role_policy_attachment" "ecs_instance_ssm_policy" {
