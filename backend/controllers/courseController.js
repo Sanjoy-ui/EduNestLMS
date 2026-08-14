@@ -2,6 +2,13 @@ import Course from "../models/courseModel.js"
 import Lecture from "../models/lectureModel.js"
 import User from "../models/userModel.js"
 
+const extractYouTubeId = (url) => {
+  if (!url) return "";
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : "";
+};
+
 // create Courses
 export const createCourse = async (req,res) => {
 
@@ -69,7 +76,7 @@ export const editCourse = async (req,res) => {
         course = await Course.findByIdAndUpdate(courseId , updateData , {new:true})
         return res.status(201).json(course)
     } catch (error) {
-        return res.status(500).json({message:`Failed to update course ${error}`})
+          return res.status(500).json({message:`Failed to edit course ${error}`})
     }
 }
 
@@ -77,16 +84,16 @@ export const editCourse = async (req,res) => {
 export const getCourseById = async (req,res) => {
     try {
         const {courseId} = req.params
-        let course = await Course.findById(courseId)
-        if(!course){
+        const course = await Course.findById(courseId)
+         if(!course){
             return res.status(404).json({message:"Course not found"})
         }
-         return res.status(200).json(course)
-        
+        return res.status(200).json(course)
     } catch (error) {
-        return res.status(500).json({message:`Failed to get course ${error}`})
+         return res.status(500).json({message:`Failed to get course ${error}`})
     }
 }
+
 export const removeCourse = async (req, res) => {
   try {
     const courseId = req.params.courseId;
@@ -108,28 +115,41 @@ export const removeCourse = async (req, res) => {
 
 //create lecture
 
-export const createLecture = async (req,res) => {
+export const createLecture = async (req, res) => {
     try {
-        const {lectureTitle}= req.body
-        const {courseId} = req.params
+        const { lectureTitle, videoUrl, videoType, youtubeUrl, isPreviewFree, youtubeChannelName } = req.body;
+        const { courseId } = req.params;
 
-        if(!lectureTitle || !courseId){
-             return res.status(400).json({message:"Lecture Title required"})
+        if (!lectureTitle || !courseId) {
+             return res.status(400).json({ message: "Lecture Title required" });
         }
-        const lecture = await Lecture.create({lectureTitle})
-        const course = await Course.findById(courseId)
-        if(course){
-            course.lectures.push(lecture._id)
-            
+
+        let yId = "";
+        if (youtubeUrl) {
+            yId = extractYouTubeId(youtubeUrl);
         }
-        await course.populate("lectures")
-        await course.save()
-        return res.status(201).json({lecture,course})
+
+        const lecturePayload = {
+            lectureTitle,
+            videoUrl,
+            videoType: videoType || (youtubeUrl ? 'youtube' : 'upload'),
+            youtubeUrl,
+            youtubeVideoId: yId,
+            youtubeChannelName: youtubeChannelName || "",
+            isPreviewFree: isPreviewFree || false
+        };
+
+        const lecture = await Lecture.create(lecturePayload);
+        const course = await Course.findById(courseId);
+        if (course) {
+            course.lectures.push(lecture._id);
+            await course.save();
+        }
+        return res.status(201).json({ lecture, course });
         
     } catch (error) {
-        return res.status(500).json({message:`Failed to Create Lecture ${error}`})
+        return res.status(500).json({ message: `Failed to Create Lecture ${error}` });
     }
-    
 }
 
 export const getCourseLecture = async (req, res) => {
@@ -152,11 +172,13 @@ export const getCourseLecture = async (req, res) => {
         const isEnrolled = user.enrolledCourses?.some(c => c.toString() === courseId.toString());
 
         if (!isCreator && !isEnrolled) {
-            // Filter lectures: strip videoUrl for paid non-preview lectures
+            // Filter lectures: strip videoUrl / youtubeUrl for paid non-preview lectures
             const safeLectures = course.lectures.map(lecture => {
                 const lecObj = lecture.toObject();
                 if (!lecObj.isPreviewFree) {
                     delete lecObj.videoUrl;
+                    delete lecObj.youtubeUrl;
+                    delete lecObj.youtubeVideoId;
                 }
                 return lecObj;
             });
@@ -185,77 +207,64 @@ export const getCourseLecture = async (req, res) => {
     }
 }
 
-export const editLecture = async (req,res) => {
+export const editLecture = async (req, res) => {
     try {
-        const {lectureId} = req.params
-        const {isPreviewFree , lectureTitle, videoUrl} = req.body
-        const lecture = await Lecture.findById(lectureId)
-          if(!lecture){
-            return res.status(404).json({message:"Lecture not found"})
+        const { lectureId } = req.params;
+        const { isPreviewFree, lectureTitle, videoUrl, videoType, youtubeUrl, youtubeChannelName } = req.body;
+        const lecture = await Lecture.findById(lectureId);
+        if (!lecture) {
+            return res.status(404).json({ message: "Lecture not found" });
         }
-        if(videoUrl){
-            lecture.videoUrl = videoUrl
+
+        if (lectureTitle) lecture.lectureTitle = lectureTitle;
+        if (videoUrl !== undefined) lecture.videoUrl = videoUrl;
+        if (videoType) lecture.videoType = videoType;
+        if (youtubeUrl !== undefined) {
+            lecture.youtubeUrl = youtubeUrl;
+            lecture.youtubeVideoId = extractYouTubeId(youtubeUrl);
         }
-        if(lectureTitle){
-            lecture.lectureTitle = lectureTitle
-        }
-        if(isPreviewFree !== undefined){
-            lecture.isPreviewFree = isPreviewFree
-        }
+        if (youtubeChannelName !== undefined) lecture.youtubeChannelName = youtubeChannelName;
+        if (isPreviewFree !== undefined) lecture.isPreviewFree = isPreviewFree;
         
-         await lecture.save()
-        return res.status(200).json(lecture)
+        await lecture.save();
+        return res.status(200).json(lecture);
     } catch (error) {
-        return res.status(500).json({message:`Failed to edit Lectures ${error}`})
+        return res.status(500).json({ message: `Failed to edit Lectures ${error}` });
     }
-    
 }
 
-export const removeLecture = async (req,res) => {
+export const removeLecture = async (req, res) => {
     try {
-        const {lectureId} = req.params
-        const lecture = await Lecture.findByIdAndDelete(lectureId)
-        if(!lecture){
-             return res.status(404).json({message:"Lecture not found"})
+        const { lectureId } = req.params;
+        const lecture = await Lecture.findByIdAndDelete(lectureId);
+        if (!lecture) {
+             return res.status(404).json({ message: "Lecture not found" });
         }
         //remove the lecture from associated course
 
         await Course.updateOne(
-            {lectures: lectureId},
-            {$pull:{lectures: lectureId}}
-        )
-        return res.status(200).json({message:"Lecture Remove Successfully"})
-        }
-    
-     catch (error) {
-        return res.status(500).json({message:`Failed to remove Lectures ${error}`})
+            { lectures: lectureId },
+            { $pull: { lectures: lectureId } }
+        );
+        return res.status(200).json({ message: "Lecture Remove Successfully" });
+    } catch (error) {
+        return res.status(500).json({ message: `Failed to remove Lectures ${error}` });
     }
 }
 
-
-
-//get Creator data
-
-
-// controllers/userController.js
-
 export const getCreatorById = async (req, res) => {
   try {
-    const {userId} = req.body;
+    const { userId } = req.body;
 
-    const user = await User.findById(userId).select("-password"); // Exclude password
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.status(200).json( user );
+    res.status(200).json(user);
   } catch (error) {
     console.error("Error fetching user by ID:", error);
     res.status(500).json({ message: "get Creator error" });
   }
 };
-
-
-
-
