@@ -28,7 +28,7 @@ import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import { ClipLoader } from 'react-spinners';
 
-export const serverUrl = import.meta.env.VITE_API_GATEWAY_URL || "http://localhost:8080";
+export const serverUrl = import.meta.env.VITE_API_GATEWAY_URL !== undefined ? import.meta.env.VITE_API_GATEWAY_URL : "http://localhost:8080";
 
 function App() {
   const { userData, loadingUser } = useSelector(state => state.user);
