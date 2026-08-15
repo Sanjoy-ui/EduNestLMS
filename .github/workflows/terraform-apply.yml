@@ -160,6 +160,59 @@ jobs:
             fi
           fi
 
+      - name: Import Pre-existing ECR Repositories into Terraform State (if needed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd iac/environments/${{ inputs.target_environment }}
+
+          # Resolve prefix from tfvars (same approach as capacity provider step)
+          PREFIX=$(awk -F'=' '/prefix[[:space:]]*=/ {print $2}' "${{ inputs.target_environment }}.tfvars" | tr -d '"[:space:]')
+          if [ -z "$PREFIX" ]; then
+            PREFIX="edunest-${{ inputs.target_environment }}"
+          fi
+
+          REPOS=("api-gateway" "backend" "storage-service")
+
+          for REPO in "${REPOS[@]}"; do
+            REPO_NAME="${PREFIX}-${REPO}"
+            TF_ADDR="module.ecr.aws_ecr_repository.services[\"${REPO}\"]"
+            TF_POLICY_ADDR="module.ecr.aws_ecr_lifecycle_policy.services_policy[\"${REPO}\"]"
+
+            echo "--- Checking ECR repo: $REPO_NAME ---"
+
+            # Check if repo exists in AWS
+            if aws ecr describe-repositories --repository-names "$REPO_NAME" --region "${{ secrets.AWS_REGION }}" >/dev/null 2>&1; then
+              echo "  Repo '$REPO_NAME' exists in AWS."
+
+              # Import repo if not already tracked in state
+              if ! terraform state show "$TF_ADDR" >/dev/null 2>&1; then
+                echo "  Importing $TF_ADDR..."
+                terraform import \
+                  -var-file="${{ inputs.target_environment }}.tfvars" \
+                  "$TF_ADDR" \
+                  "$REPO_NAME"
+                echo "  Imported successfully."
+              else
+                echo "  Already tracked in Terraform state - skipping import."
+              fi
+
+              # Import lifecycle policy if not already tracked in state
+              if ! terraform state show "$TF_POLICY_ADDR" >/dev/null 2>&1; then
+                echo "  Importing lifecycle policy $TF_POLICY_ADDR..."
+                terraform import \
+                  -var-file="${{ inputs.target_environment }}.tfvars" \
+                  "$TF_POLICY_ADDR" \
+                  "$REPO_NAME"
+                echo "  Lifecycle policy imported successfully."
+              else
+                echo "  Lifecycle policy already tracked in Terraform state - skipping import."
+              fi
+            else
+              echo "  Repo '$REPO_NAME' does not exist in AWS - Terraform will create it."
+            fi
+          done
+
       - name: Execute Terraform Apply (-auto-approve)
         shell: bash
         run: |
