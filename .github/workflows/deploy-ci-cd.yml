@@ -1,6 +1,7 @@
 name: Production CI/CD Pipeline & ECS Rolling Deploy
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -164,7 +165,7 @@ jobs:
   deploy-ecs:
     name: Deploy to Amazon ECS & Verify Health
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
