@@ -266,6 +266,50 @@ jobs:
           container-name: ${{ secrets.ECS_CONTAINER_NAME || 'api-gateway' }}
           image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}api-gateway:sha-${{ steps.vars.outputs.SHORT_SHA }}
 
+      - name: Ensure ECS Service Exists (Create if missing)
+        if: steps.check-cluster.outputs.SKIP != 'true'
+        shell: bash
+        run: |
+          SERVICE_NAME="${{ secrets.ECS_SERVICE_NAME }}"
+          if [ -z "$SERVICE_NAME" ]; then
+            SERVICE_NAME="edunest-dev-api-gateway-service"
+          fi
+          CLUSTER_NAME="${{ secrets.ECS_CLUSTER_NAME }}"
+          if [ -z "$CLUSTER_NAME" ]; then
+            CLUSTER_NAME="edunest-dev-cluster"
+          fi
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Checking if ECS service '$SERVICE_NAME' exists in cluster '$CLUSTER_NAME'..."
+          EXISTS=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --region "$REGION" --query "services[?status=='ACTIVE'].serviceName" --output text 2>/dev/null || echo "")
+
+          if [ -z "$EXISTS" ] || [ "$EXISTS" = "None" ]; then
+            echo "ECS service '$SERVICE_NAME' does not exist in cluster '$CLUSTER_NAME'. Registering task definition and creating initial ECS service..."
+
+            NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "file://${{ steps.render-task-def.outputs.task-definition }}" --region "$REGION" --query "taskDefinition.taskDefinitionArn" --output text)
+            echo "Registered task definition: $NEW_TASK_DEF_ARN"
+
+            TG_ARN=$(aws elbv2 describe-target-groups --region "$REGION" --query "TargetGroups[?contains(TargetGroupName,'gateway-tg')].TargetGroupArn" --output text 2>/dev/null || echo "")
+            if [ -z "$TG_ARN" ]; then
+              echo "::error::Target group containing 'gateway-tg' not found in AWS region $REGION."
+              exit 1
+            fi
+
+            echo "Target Group ARN: $TG_ARN"
+            echo "Creating initial ECS service '$SERVICE_NAME'..."
+            aws ecs create-service \
+              --cluster "$CLUSTER_NAME" \
+              --service-name "$SERVICE_NAME" \
+              --task-definition "$NEW_TASK_DEF_ARN" \
+              --desired-count 1 \
+              --launch-type EC2 \
+              --load-balancers "targetGroupArn=$TG_ARN,containerName=api-gateway,containerPort=8080" \
+              --region "$REGION"
+            echo "Initial ECS service '$SERVICE_NAME' created successfully!"
+          else
+            echo "ECS service '$SERVICE_NAME' already exists in cluster '$CLUSTER_NAME'."
+          fi
+
       - name: Deploy Updated Task Definition to Amazon ECS
         if: steps.check-cluster.outputs.SKIP != 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
