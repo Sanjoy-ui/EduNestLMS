@@ -275,11 +275,17 @@ jobs:
           wait-for-service-stability: true
 
       - name: Verify ALB Live Endpoint Health Check
-        if: steps.check-cluster.outputs.SKIP != 'true' && secrets.ALB_HEALTH_CHECK_URL != ''
+        if: steps.check-cluster.outputs.SKIP != 'true'
         shell: bash
         run: |
-          echo "Verifying ALB target group health check at ${{ secrets.ALB_HEALTH_CHECK_URL }}..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.ALB_HEALTH_CHECK_URL }} || echo "000")
+          HEALTH_URL="${{ secrets.ALB_HEALTH_CHECK_URL }}"
+          if [ -z "$HEALTH_URL" ]; then
+            echo "ALB_HEALTH_CHECK_URL secret is not set; skipping live health check."
+            exit 0
+          fi
+
+          echo "Verifying ALB target group health check at $HEALTH_URL..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
           if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 301 ] || [ "$STATUS" -eq 302 ]; then
             echo "Deployment healthy! HTTP Status: $STATUS"
           else
