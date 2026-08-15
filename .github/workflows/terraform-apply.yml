@@ -117,11 +117,11 @@ jobs:
           cd iac/environments/${{ inputs.target_environment }}
 
           echo "Resolving ECS capacity provider name from Terraform variables..."
-          CAPACITY_PROVIDER_NAME=$(timeout 30s terraform console -var-file="${{ inputs.target_environment }}.tfvars" <<'EOF'
-          format("%s-capacity-provider", var.prefix)
-          EOF
-          )
-          CAPACITY_PROVIDER_NAME=$(echo "$CAPACITY_PROVIDER_NAME" | tr -d '"[:space:]')
+          PREFIX=$(awk -F'=' '/prefix[[:space:]]*=/ {print $2}' "${{ inputs.target_environment }}.tfvars" | tr -d '"[:space:]')
+          if [ -z "$PREFIX" ]; then
+            PREFIX="edunest-${{ inputs.target_environment }}"
+          fi
+          CAPACITY_PROVIDER_NAME="${PREFIX}-capacity-provider"
 
           if [ -z "$CAPACITY_PROVIDER_NAME" ]; then
             echo "::error::Failed to resolve ECS capacity provider name."
