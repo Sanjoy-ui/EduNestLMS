@@ -28,7 +28,20 @@ import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import { ClipLoader } from 'react-spinners';
 
-export const serverUrl = import.meta.env.VITE_API_GATEWAY_URL !== undefined ? import.meta.env.VITE_API_GATEWAY_URL : "http://localhost:8080";
+const getBackendUrl = () => {
+  const envUrl = import.meta.env.VITE_API_GATEWAY_URL;
+  // If running on an HTTPS site (e.g. Cloudflare Pages) and envUrl is HTTP or unset,
+  // return empty string so requests are made relative to same-origin HTTPS domain
+  // and handled by the Cloudflare Pages Function reverse proxy.
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    if (!envUrl || envUrl.startsWith('http://')) {
+      return '';
+    }
+  }
+  return envUrl || "http://localhost:8080";
+};
+
+export const serverUrl = getBackendUrl();
 
 function App() {
   const { userData, loadingUser } = useSelector(state => state.user);
