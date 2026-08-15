@@ -11,10 +11,10 @@ const courseSlice=createSlice({
     },
     reducers:{
         setCreatorCourseData:(state,action)=>{
-            state.creatorCourseData = Array.isArray(action.payload) ? action.payload : []
+        state.creatorCourseData=action.payload
         },
         setCourseData:(state,action)=>{
-            state.courseData = Array.isArray(action.payload) ? action.payload : []
+            state.courseData = action.payload
         },
         setSelectedCourseData:(state,action)=>{
             state.selectedCourseData=action.payload

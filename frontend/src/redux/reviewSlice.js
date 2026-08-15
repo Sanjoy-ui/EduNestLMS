@@ -10,7 +10,7 @@ const reviewSlice=createSlice({
     },
     reducers:{
         setAllReview:(state,action)=>{
-            state.allReview = Array.isArray(action.payload) ? action.payload : []
+        state.allReview=action.payload
         }
     }
 })
