@@ -194,14 +194,19 @@ jobs:
                 echo "  Already tracked in Terraform state - skipping import."
               fi
 
-              # Import lifecycle policy if not already tracked in state
+              # Import lifecycle policy ONLY if it exists in AWS
+              # (CI/CD repo creation step does not create lifecycle policies)
               if ! terraform state show "$TF_POLICY_ADDR" >/dev/null 2>&1; then
-                echo "  Importing lifecycle policy $TF_POLICY_ADDR..."
-                terraform import \
-                  -var-file="${{ inputs.target_environment }}.tfvars" \
-                  "$TF_POLICY_ADDR" \
-                  "$REPO_NAME"
-                echo "  Lifecycle policy imported successfully."
+                if aws ecr get-lifecycle-policy --repository-name "$REPO_NAME" --region "${{ secrets.AWS_REGION }}" >/dev/null 2>&1; then
+                  echo "  Importing lifecycle policy $TF_POLICY_ADDR..."
+                  terraform import \
+                    -var-file="${{ inputs.target_environment }}.tfvars" \
+                    "$TF_POLICY_ADDR" \
+                    "$REPO_NAME"
+                  echo "  Lifecycle policy imported successfully."
+                else
+                  echo "  No lifecycle policy on '$REPO_NAME' in AWS - Terraform will create it."
+                fi
               else
                 echo "  Lifecycle policy already tracked in Terraform state - skipping import."
               fi
