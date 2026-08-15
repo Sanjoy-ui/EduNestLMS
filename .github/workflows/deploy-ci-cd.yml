@@ -199,29 +199,83 @@ jobs:
             echo "VAL=edunest-dev-" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download Active Task Definition
+      - name: Verify Active ECS Cluster
+        id: check-cluster
+        shell: bash
         run: |
-          aws ecs describe-task-definition \
-            --task-definition ${{ secrets.ECS_TASK_DEFINITION_NAME }} \
-            --query taskDefinition > task-definition.json
+          CLUSTER_NAME="${{ secrets.ECS_CLUSTER_NAME }}"
+          if [ -z "$CLUSTER_NAME" ]; then
+            CLUSTER_NAME="edunest-dev-cluster"
+          fi
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Checking status of ECS cluster '$CLUSTER_NAME' in $REGION..."
+          ACTIVE_CLUSTER=$(aws ecs describe-clusters --clusters "$CLUSTER_NAME" --region "$REGION" --query "clusters[?status=='ACTIVE'].clusterName" --output text 2>/dev/null || echo "")
+
+          if [ -z "$ACTIVE_CLUSTER" ] || [ "$ACTIVE_CLUSTER" = "None" ]; then
+            echo "::notice::ECS cluster '$CLUSTER_NAME' is not active or not provisioned yet."
+            echo "::notice::Build & push to ECR completed successfully. Please run '1-Click AWS Infrastructure Provision (Apply)' workflow to create the ECS cluster and services."
+            echo "SKIP=true" >> $GITHUB_OUTPUT
+          else
+            echo "ECS cluster '$CLUSTER_NAME' is ACTIVE."
+            echo "SKIP=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download or Generate Task Definition
+        if: steps.check-cluster.outputs.SKIP != 'true'
+        shell: bash
+        run: |
+          TASK_DEF_NAME="${{ secrets.ECS_TASK_DEFINITION_NAME }}"
+          if [ -z "$TASK_DEF_NAME" ]; then
+            TASK_DEF_NAME="edunest-dev-api-gateway"
+          fi
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Attempting to fetch active task definition '$TASK_DEF_NAME' from AWS..."
+          if aws ecs describe-task-definition --task-definition "$TASK_DEF_NAME" --region "$REGION" --query taskDefinition > task-definition.json 2>/dev/null; then
+            echo "Successfully fetched active task definition from AWS."
+          else
+            echo "No active task definition found on AWS. Generating initial task-definition.json from template..."
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            PREFIX="${{ steps.prefix.outputs.VAL }}"
+            PREFIX_TRIMMED="${PREFIX%-}"
+            CONTAINER_NAME="${{ secrets.ECS_CONTAINER_NAME }}"
+            if [ -z "$CONTAINER_NAME" ]; then
+              CONTAINER_NAME="api-gateway"
+            fi
+
+            sed \
+              -e "s|\${ECS_TASK_DEFINITION_NAME}|$TASK_DEF_NAME|g" \
+              -e "s|\${AWS_ACCOUNT_ID}|$ACCOUNT_ID|g" \
+              -e "s|\${AWS_REGION}|$REGION|g" \
+              -e "s|\${ECR_REPOSITORY_PREFIX}|$PREFIX_TRIMMED|g" \
+              -e "s|\${ECR_REGISTRY}|${{ steps.login-ecr.outputs.registry }}|g" \
+              -e "s|\${ECS_CONTAINER_NAME}|$CONTAINER_NAME|g" \
+              .aws/task-definition-template.json > task-definition.json
+
+            echo "Generated initial task-definition.json from template."
+          fi
 
       - name: Render New Image in Task Definition
+        if: steps.check-cluster.outputs.SKIP != 'true'
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: ${{ secrets.ECS_CONTAINER_NAME }}
-          image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}backend:sha-${{ steps.vars.outputs.SHORT_SHA }}
+          container-name: ${{ secrets.ECS_CONTAINER_NAME || 'api-gateway' }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.prefix.outputs.VAL }}api-gateway:sha-${{ steps.vars.outputs.SHORT_SHA }}
 
       - name: Deploy Updated Task Definition to Amazon ECS
+        if: steps.check-cluster.outputs.SKIP != 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: ${{ secrets.ECS_SERVICE_NAME }}
-          cluster: ${{ secrets.ECS_CLUSTER_NAME }}
+          service: ${{ secrets.ECS_SERVICE_NAME || 'edunest-dev-api-gateway-service' }}
+          cluster: ${{ secrets.ECS_CLUSTER_NAME || 'edunest-dev-cluster' }}
           wait-for-service-stability: true
 
       - name: Verify ALB Live Endpoint Health Check
+        if: steps.check-cluster.outputs.SKIP != 'true' && secrets.ALB_HEALTH_CHECK_URL != ''
         shell: bash
         run: |
           echo "Verifying ALB target group health check at ${{ secrets.ALB_HEALTH_CHECK_URL }}..."
