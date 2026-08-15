@@ -63,7 +63,7 @@ export const verifyGatewayAuth = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
     req.userId = decoded.userId || decoded.id;
 
-    // Attach decoded user ID to request headers forwarded to downstream microservices
+    // Attach decoded user ID to request headers forwarded to downstream microservicess
     req.headers['x-user-id'] = req.userId;
     next();
   } catch (error) {
