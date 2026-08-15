@@ -83,7 +83,7 @@ variable "instance_type" {
 }
 
 variable "ami_id" {
-  description = "Amazon ECS-Optimized AMI ID (e.g. ami-0c7217cdde317cfec)"
+  description = "Unused — AMI is now auto-fetched from SSM Parameter Store (/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id) in main.tf"
   type        = string
-  default     = "ami-0c7217cdde317cfec"
+  default     = "" # Superseded by data.aws_ssm_parameter.ecs_ami
 }

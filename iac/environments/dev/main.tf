@@ -1,3 +1,9 @@
+# Automatically fetch the latest ECS-Optimized Amazon Linux 2 AMI for the current region.
+# This avoids hardcoding Ubuntu or stale AMI IDs that do not have the ECS agent pre-installed.
+data "aws_ssm_parameter" "ecs_ami" {
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id"
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -61,7 +67,7 @@ module "ecs_ec2" {
   private_subnet_ids        = module.vpc.private_app_subnet_ids
   alb_security_group_id     = module.alb.alb_security_group_id
   instance_type             = var.instance_type # t3.micro Free Tier
-  ami_id                    = var.ami_id
+  ami_id                    = data.aws_ssm_parameter.ecs_ami.value # Always latest ECS-Optimized Amazon Linux 2
   ecs_instance_profile_name = module.iam.ecs_instance_profile_name
 
   tags = {
